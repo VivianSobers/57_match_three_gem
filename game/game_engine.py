@@ -1,3 +1,4 @@
+import math
 import pygame
 from game.board import Board, GRID_SIZE, TILE_SIZE
 
@@ -17,7 +18,28 @@ class GameEngine:
         self.combo_text = None
         self.combo_until = 0
 
+        self.hint = None
+        self.last_input_time = pygame.time.get_ticks()
+
+    def find_hint(self):
+        """Return an adjacent pair of cells whose swap would make a match, or None."""
+        board = self.board
+        for r in range(GRID_SIZE):
+            for c in range(GRID_SIZE):
+                for r2, c2 in ((r, c + 1), (r + 1, c)):
+                    if r2 >= GRID_SIZE or c2 >= GRID_SIZE:
+                        continue
+                    board.swap_gems((r, c), (r2, c2))
+                    matched = board.find_matches()
+                    board.swap_gems((r, c), (r2, c2))
+                    if matched:
+                        return (r, c), (r2, c2)
+        return None
+
     def handle_click(self, mouse_pos):
+        self.hint = None
+        self.last_input_time = pygame.time.get_ticks()
+
         if self.board.is_game_over() or self.board.is_animating():
             return
 
@@ -44,9 +66,20 @@ class GameEngine:
     def reset(self):
         self.board.reset()
         self.combo_text = None
+        self.hint = None
+        self.last_input_time = pygame.time.get_ticks()
 
     def update(self):
         self.board.update()
+
+        idle_ms = pygame.time.get_ticks() - self.last_input_time
+        if (
+            self.hint is None
+            and idle_ms >= 5000
+            and not self.board.is_animating()
+            and not self.board.is_game_over()
+        ):
+            self.hint = self.find_hint()
 
     def render(self, screen):
         screen.fill((32, 34, 40))
@@ -61,6 +94,16 @@ class GameEngine:
         screen.blit(hud_surf, (self.width // 2 - hud_surf.get_width() // 2, 55))
 
         self.board.render(screen)
+
+        if self.hint:
+            pulse = (math.sin(pygame.time.get_ticks() / 200) + 1) / 2
+            glow = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+            pygame.draw.rect(
+                glow, (255, 240, 120, int(80 + 175 * pulse)), glow.get_rect(),
+                width=3 + int(3 * pulse), border_radius=12,
+            )
+            for r, c in self.hint:
+                screen.blit(glow, (self.board.offset_x + c * TILE_SIZE, self.board.offset_y + r * TILE_SIZE))
 
         if self.combo_text and pygame.time.get_ticks() >= self.combo_until:
             self.combo_text = None
